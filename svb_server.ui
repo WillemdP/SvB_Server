@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>SvB_Server</class>
+ <widget class="QMainWindow" name="SvB_Server">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>400</width>
+    <height>300</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>SvB_Server</string>
+  </property>
+  <widget class="QWidget" name="centralWidget">
+   <layout class="QHBoxLayout" name="horizontalLayout">
+    <item>
+     <layout class="QGridLayout" name="gridLayout">
+      <item row="0" column="0">
+       <widget class="QLabel" name="label_uL">
+        <property name="text">
+         <string>___</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignCenter</set>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QLabel" name="label_lR">
+        <property name="text">
+         <string>___</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignCenter</set>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QTableView" name="tableView_uR"/>
+      </item>
+      <item row="1" column="0">
+       <widget class="QTableView" name="tableView_uL"/>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="label_lL">
+        <property name="text">
+         <string>___</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignCenter</set>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="0">
+       <widget class="QTableView" name="tableView_lL"/>
+      </item>
+      <item row="3" column="1">
+       <widget class="QTableView" name="tableView_lR"/>
+      </item>
+      <item row="0" column="1">
+       <widget class="QLabel" name="label_uR">
+        <property name="text">
+         <string>___</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignCenter</set>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </item>
+   </layout>
+  </widget>
+ </widget>
+ <layoutdefault spacing="6" margin="11"/>
+ <resources/>
+ <connections/>
+</ui>
