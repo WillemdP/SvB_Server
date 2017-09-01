@@ -12,6 +12,8 @@
 #include <QThread>
 #include <QTimer>
 
+#include <QDateTime>
+
 #include <QKeyEvent>
 
 #include "tcphost.h"
@@ -29,10 +31,10 @@ public:
     ~SvB_Server();
 
 public slots:
-    void addNewClient(QString address);
-    void addNewEntry(QStringList columns, QVariantList values);
-    void updateEntry(QString column, QVariant value);
-    void updateEntry(QStringList columns, QVariantList values);
+    void addNewClient(QTcpSocket *socket, QString address);
+    void addNewEntry(QTcpSocket *socket, QStringList columns, QVariantList values);
+    void updateEntry(QTcpSocket *socket, QString column, QVariant value);
+    void updateEntry(QTcpSocket *socket, QStringList columns, QVariantList values);
 
 //    void newClient(QString MAC);
 //    void newEntryRequest(QStringList columns, QVariantList values); /// Create new entry
@@ -41,6 +43,9 @@ public slots:
 
 protected:
     void keyPressEvent(QKeyEvent *event);
+
+signals:
+    void sendMessage(QTcpSocket *socket, QString message);
 
 private:
     void buildModel();

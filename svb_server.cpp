@@ -13,11 +13,16 @@ SvB_Server::SvB_Server(QWidget *parent) :
     // Main thread: receive Tcp newConnection() signals and spawn requestHandler class/threads
 
 
-
+    ///
     tcpServer = new TcpHost();
     tcpThread = new QThread();
     tcpServer->moveToThread(tcpThread);
-    // connect tcpServer signals to local slots
+    connect(tcpServer, SIGNAL(newClient(QTcpSocket*,QString)), this, SLOT(addNewClient(QTcpSocket*,QString)));
+    connect(tcpServer, SIGNAL(newEntryRequest(QTcpSocket*,QStringList,QVariantList)), this, SLOT(addNewEntry(QTcpSocket*,QStringList,QVariantList)));
+    connect(tcpServer, SIGNAL(updateEntryRequest(QTcpSocket*,QString,QVariant)), this, SLOT(updateEntry(QTcpSocket*,QString,QVariant)));
+    connect(tcpServer, SIGNAL(updateEntryRequest(QTcpSocket*,QStringList,QVariantList)), this, SLOT(updateEntry(QTcpSocket*,QStringList,QVariantList)));
+    connect(this, SIGNAL(sendMessage(QTcpSocket*,QString)), tcpServer, SLOT(sendMessage(QTcpSocket*,QString)));
+
     tcpThread->start();
     ///
 
@@ -27,8 +32,10 @@ SvB_Server::SvB_Server(QWidget *parent) :
     proxyLowerLeft = new QSortFilterProxyModel(this);
     proxyLowerRight = new QSortFilterProxyModel(this);
     proxies << proxyUpperLeft << proxyUpperRight << proxyLowerLeft << proxyLowerRight;
-    for(int i=0; i<tables.count(); i++)
+    for(int i=0; i<tables.count(); i++) {
         tables.at(i)->setModel(proxies.at(i));
+        tables.at(i)->selectionModel()->clearSelection();
+    }
 
     QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE", tr("Database"));
     db.setDatabaseName(tr("%1SvB2017.db3").arg(QDir::currentPath() + QDir::separator()));
@@ -71,11 +78,11 @@ SvB_Server::SvB_Server(QWidget *parent) :
         header = model->headerData(i, Qt::Horizontal).toString();
         if(header=="Stapper ID")
             ID = i;
-        else if(header=="ID nommer")
+        else if(header=="ID Nommer")
             personalID = i;
         else if(header=="Betaal")
             paid = i;
-        else if(header=="Selfoon nommer")
+        else if(header=="Selfoon Nommer")
             cellphone = i;
     }
 
@@ -110,66 +117,145 @@ SvB_Server::~SvB_Server()
     delete ui;
 }
 
-void SvB_Server::addNewClient(QString address)
+void SvB_Server::addNewClient(QTcpSocket *socket, QString address)
 {
     // Add client to list or new QThread
 }
 
-void SvB_Server::addNewEntry(QStringList columns, QVariantList values)
+void SvB_Server::addNewEntry(QTcpSocket *socket, QStringList columns, QVariantList values)
 {
     // Register User Request
 //    QSqlDatabase db = QSqlDatabase::database("Database");
     QSqlRecord record;
     QSqlField field;
+    QString name;
+    QVariant id = QVariant(proxyOfKeyColumn->data(proxyOfKeyColumn->index(model->rowCount()-1, 0)).toInt() + 1);
     for(int i=0; i<columns.length(); i++) {
         field.setName(columns.at(i));
         field.setValue(values.at(i));
+        if(columns.at(i)=="Naam")
+            name = values.at(i).toString();
         record.append(field);
     }
+    field.setName("Stapper_9_ID");
+    field.setValue(id);
+    record.append(field);
+    field.setName("Rondtes");
+    field.setValue(QVariant(0));
+    record.append(field);
     if(!model->insertRecord(-1, record)) {
         qDebug() << "Failed to insert requested entry:" << model->lastError().text();
-//        emit sendMessage(address, "Failed");
+        emit sendMessage(socket, tr("Failed|%1").arg(name));
         return;
     }
     qDebug() << "Successfully inserted a new entry upon request.";
-//    emit sendMessage(address, "Success");
+    emit sendMessage(socket, tr("Success|%1").arg(name));
+    foreach(QTableView *table, tables)
+        table->resizeColumnsToContents();
     return;
 }
 
-void SvB_Server::updateEntry(QString column, QVariant value)
+void SvB_Server::updateEntry(QTcpSocket *socket, QString column, QVariant value)
 {
-//    QSqlDatabase db = QSqlDatabase::database("Database");
-    QSqlRecord record;
-    QSqlField field;
-    field.setName(column);
-    field.setValue(value);
-    record.append(field);
-    if(!model->setRecord(-1, record)) {
-        qDebug() << "Update entry request failed." << model->lastError().text();
-//        emit sendMessage(address, "Failed");
+    if(!column.contains("QR_9_Code"))
+        return;
+    int qr = value.toInt();
+
+    QString camera = column.split("|").at(0);
+    qDebug() << column;
+
+    QSqlDatabase db = QSqlDatabase::database("Database");
+    QSqlQuery query(db);
+    QString queryText = tr("select * from Stappers where QR_9_Code = %1").arg(qr); // Stapper_9_ID,Naam,Van,Rondtes,Laaste_9_Rondte,
+    if(!query.exec(queryText)) {
+        qDebug() << "Select query failed:" << query.lastError().text();
+        emit sendMessage(socket, tr("Failed|%1").arg(value.toString()));
+        return;
+    }
+
+    QString name;
+    QString surname;
+    QString sex;
+    QString denom;
+    QString congreg;
+    QString id;
+    int laps;
+    QString lastLap;
+
+    while(query.next()) {
+        name = query.value(tr("Naam")).toString();
+        surname = query.value(tr("Van")).toString();
+        sex = query.value(tr("Geslag")).toString();
+        denom = query.value(tr("Kerkverband")).toString();
+        congreg = query.value(tr("Gemeente")).toString();
+        id = query.value(tr("Stapper_9_ID")).toString();
+        laps = query.value(tr("Rondtes")).toInt();
+        lastLap = query.value(tr("Laaste_9_Rondte")).toString();
+    }
+
+    QTime last = QTime::fromString(lastLap, tr("HH:mm:ss"));
+    QTime now = QDateTime::currentDateTime().time();
+    if(lastLap!="")
+        if(last.secsTo(now)<60) {
+            qDebug() << "Too soon";
+            emit sendMessage(socket, tr("Failed|%1").arg(value.toString()));
+            return;
+        }
+
+    // The setRecord approach:
+    // Using the proxyOfKeyColumn model, filter by QR Code, get modelIndex of result
+    // baseIndex = proxyOfKeyColumn->mapToSource(resultIndex);
+    // model->setRecord(baseIndex.row(),QVariant(TheValue));
+    // Asynchronous?
+
+    laps++;
+
+    queryText = tr("update Stappers set %1 = %2 , %3 = '%4' where Stapper_9_ID = %5").arg("Rondtes", QString::number(laps), "Laaste_9_Rondte", now.toString("HH:mm:ss"), id);
+
+    if(!query.exec(queryText)) {
+        qDebug() << "Update entry request failed." << query.lastError().text();
+        qDebug() << "Query:" << queryText.toStdString().c_str();
+        emit sendMessage(socket, tr("Failed|%1").arg(value.toString()));
+        return;
     }
     qDebug() << "Updated an entry upon request.";
-//    emit sendMessage(address, "Success");
+    QStringList response;
+    response << tr("Naam;%1").arg(name);
+    response << tr("Van;%1").arg(surname);
+    response << tr("Rondtes;%1").arg(QString::number(laps));
+    response << tr("Geslag;%1").arg(sex);
+    response << tr("Kerkverband;%1").arg(denom);
+    response << tr("Gemeente;%1").arg(congreg);
+//    response << tr("")
+    emit sendMessage(socket, tr("Incremented|%1|%2").arg(camera, response.join("|")));
+    foreach(QTableView *table, tables)
+        table->resizeColumnsToContents();
+    model->select();
     return;
 }
 
-void SvB_Server::updateEntry(QStringList columns, QVariantList values)
+void SvB_Server::updateEntry(QTcpSocket *socket, QStringList columns, QVariantList values)
 {
 //    QSqlDatabase db = QSqlDatabase::database("Database");
     QSqlRecord record;
     QSqlField field;
+    QString name;
     for(int i=0; i<columns.length(); i++) {
         field.setName(columns.at(i));
         field.setValue(values.at(i));
+        if(columns.at(i)=="Naam")
+            name = values.at(i).toString();
         record.append(field);
     }
     if(!model->setRecord(-1, record)) {
         qDebug() << "Failed to insert requested entry:" << model->lastError().text();
-//        emit sendMessage(address, "Failed");
+        emit sendMessage(socket, tr("Failed|%1").arg(name));
         return;
     }
     qDebug() << "Successfully inserted a new entry upon request.";
-//    emit sendMessage(address, "Success");
+    emit sendMessage(socket, tr("Success|%1").arg(name));
+    foreach(QTableView *table, tables)
+        table->resizeColumnsToContents();
     return;
 }
 
@@ -213,14 +299,15 @@ void SvB_Server::buildModel()
                       "Naam varchar(20),"
                       "Van varchar(20),"
                       "Geslag varchar(1),"
-                      "ID_9_nommer varchar(13),"
+                      "ID_9_Nommer varchar(13),"
                       "Rondtes int,"
                       "Laaste_9_Rondte varchar(8),"
                       "Betaal int,"
-                      "Selfoon_9_nommer varchar(10),"
+                      "Selfoon_9_Nommer varchar(10),"
                       "Span varchar(30),"
                       "Kerkverband varchar(30),"
-                      "Gemeente varchar(30)"
+                      "Gemeente varchar(30),"
+                      "QR_9_Code varchar(8)"
                       ")"
                       );
 
@@ -236,28 +323,52 @@ void SvB_Server::buildModel()
     field.setValue(QVariant(50));
 
     newEntry.append(field);
-    field.setName(tr("%1").arg(model->headerData(6, Qt::Horizontal).toString()));
-    field.setValue(QVariant(QDateTime::currentDateTime().toString(tr("HH:MM:ss"))));
+    field.setName(tr("%1").arg(model->headerData(1, Qt::Horizontal).toString()));
+    field.setValue(QVariant("Naam1"));
+    newEntry.append(field);
+    field.setName(tr("%1").arg(model->headerData(2, Qt::Horizontal).toString()));
+    field.setValue(QVariant(tr("a")));
+    newEntry.append(field);
+    field.setName(tr("%1").arg(model->headerData(3, Qt::Horizontal).toString()));
+    field.setValue(QVariant(tr("b")));
+    newEntry.append(field);
+    field.setName(tr("%1").arg(model->headerData(4, Qt::Horizontal).toString()));
+    field.setValue(QVariant(tr("c")));
+    newEntry.append(field);
+    field.setName(tr("%1").arg(model->headerData(5, Qt::Horizontal).toString()));
+    field.setValue(QVariant(0));
+    newEntry.append(field);
+    field.setName(tr("%1").arg(model->headerData(12, Qt::Horizontal).toString()));
+    field.setValue(QVariant(915));
     newEntry.append(field);
 
     if(!model->insertRecord(0, newEntry)) {
         qDebug() << "Insert record failed:" << model->lastError().text();
     }
     newEntry.clear();
-    ///
+
+
     field.setName(tr("%1").arg(model->headerData(0, Qt::Horizontal).toString()));
     field.setValue(QVariant(30));
 
     newEntry.append(field);
-
-    if(!model->insertRecord(0, newEntry)) {
-        qDebug() << "Insert record failed:" << model->lastError().text();
-    }
-    newEntry.clear();
-
-    field.setName(tr("%1").arg(model->headerData(0, Qt::Horizontal).toString()));
-    field.setValue(QVariant(44));
-
+    field.setName(tr("%1").arg(model->headerData(1, Qt::Horizontal).toString()));
+    field.setValue(QVariant("Naam2"));
+    newEntry.append(field);
+    field.setName(tr("%1").arg(model->headerData(2, Qt::Horizontal).toString()));
+    field.setValue(QVariant(tr("dsoifsdofijsdof")));
+    newEntry.append(field);
+    field.setName(tr("%1").arg(model->headerData(3, Qt::Horizontal).toString()));
+    field.setValue(QVariant(tr("f")));
+    newEntry.append(field);
+    field.setName(tr("%1").arg(model->headerData(4, Qt::Horizontal).toString()));
+    field.setValue(QVariant(tr("j")));
+    newEntry.append(field);
+    field.setName(tr("%1").arg(model->headerData(5, Qt::Horizontal).toString()));
+    field.setValue(QVariant(0));
+    newEntry.append(field);
+    field.setName(tr("%1").arg(model->headerData(12, Qt::Horizontal).toString()));
+    field.setValue(QVariant(930));
     newEntry.append(field);
 
     if(!model->insertRecord(0, newEntry)) {
@@ -265,16 +376,7 @@ void SvB_Server::buildModel()
     }
     newEntry.clear();
 
-    field.setName(tr("%1").arg(model->headerData(0, Qt::Horizontal).toString()));
-    field.setValue(QVariant(12));
 
-    newEntry.append(field);
-
-    if(!model->insertRecord(0, newEntry)) {
-        qDebug() << "Insert record failed:" << model->lastError().text();
-    }
-    newEntry.clear();
-    ///
 
     model->setTable("Stappers"); // Because the table was "dropped" and created anew.
     model->select();
@@ -295,8 +397,8 @@ void SvB_Server::buildModel()
     for(int i=0; i<model->columnCount(); i++) {
         model->setHeaderData(i, Qt::Horizontal, QVariant(toViewFormat(model->headerData(i, Qt::Horizontal).toString())));
     }
-
-
+    foreach(QTableView *table, tables)
+        table->resizeColumnsToContents();
 }
 
 QString SvB_Server::toTableFormat(QString refString)

@@ -12,16 +12,16 @@ public:
     TcpHost();
 
 signals:
-    void newClient(QString MAC);
-    void newEntryRequest(QStringList columns, QVariantList values); /// Create new entry
-    void updateEntryRequest(QString column, QVariant value);        /// Incrementing laps
-    void updateEntryRequest(QStringList columns, QVariant values);  /// Add user info to existing blank entry with laps.
+    void newClient(QTcpSocket *socket, QString MAC);
+    void newEntryRequest(QTcpSocket *socket, QStringList columns, QVariantList values); /// Create new entry
+    void updateEntryRequest(QTcpSocket *socket, QString column, QVariant value);        /// Incrementing laps
+    void updateEntryRequest(QTcpSocket *socket, QStringList columns, QVariantList values);  /// Add user info to existing blank entry with laps.
 
 public slots:
     void handleNewConnection();
     void handleDisconnect();
     void receiveMessage();
-    void sendMessage(QString message);
+    void sendMessage(QTcpSocket *socket, QString message);
 
 private:
     QTcpServer *server;
